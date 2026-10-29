@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Mint-DLNA
+GenericName=Serwer DLNA – włącz/wyłącz
+Comment=Uruchamia lub zatrzymuje serwer MiniDLNA
+Exec=@BIN_DIR@/minidlna toggle
+Icon=network-server
+Terminal=false
+Categories=AudioVideo;
+Keywords=dlna;minidlna;media;serwer;

@@ -1,0 +1,23 @@
+services:
+  dlna:
+    image: vladgh/minidlna:1.3.13
+    container_name: dlna
+    network_mode: host
+    restart: "no"
+    volumes:
+      - ${MEDIA_PATH}:/media:ro
+      - cache:/minidlna
+    environment:
+      MINIDLNA_MEDIA_DIR: V,/media
+      MINIDLNA_FRIENDLY_NAME: Mint-DLNA
+      MINIDLNA_NOTIFY_INTERVAL: 30
+      MINIDLNA_INOTIFY: "yes"
+      # przy kazdym starcie przyrostowy rescan (nowe/usuniete pliki)
+      FORCE_SCAN: "true"
+      # true = kasuj baze i buduj od zera (uzyj jednorazowo w razie problemow)
+      FORCE_REBUILD: ${FORCE_REBUILD:-false}
+      PUID: ${PUID}
+      PGID: ${PGID}
+
+volumes:
+  cache:

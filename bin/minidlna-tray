@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+# Ikona w trayu widoczna, dopoki dziala kontener DLNA. Konczy sie po jego zatrzymaniu.
+import fcntl
+import os
+import subprocess
+import sys
+
+import gi
+gi.require_version("Gtk", "3.0")
+gi.require_version("XApp", "1.0")
+from gi.repository import GLib, Gtk, XApp
+
+CONTAINER = "dlna"
+POLL_SECONDS = 5
+TOGGLE = os.path.expanduser("~/.local/bin/minidlna")
+LOCK = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "minidlna-tray.lock")
+
+
+def is_running():
+    r = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", CONTAINER],
+                       capture_output=True, text=True)
+    return r.stdout.strip() == "true"
+
+
+def stop(_item):
+    subprocess.Popen([TOGGLE, "stop"])
+
+
+def show_logs(_item):
+    subprocess.Popen(["x-terminal-emulator", "-e", "docker", "logs", "-f", "--tail", "100", CONTAINER])
+
+
+def check(_icon):
+    if not is_running():
+        Gtk.main_quit()
+        return False
+    return True
+
+
+def main():
+    lock = open(LOCK, "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        sys.exit(0)  # ikona juz jest
+
+    if not is_running():
+        sys.exit(0)
+
+    menu = Gtk.Menu()
+    for label, cb in (("Pokaż logi", show_logs), ("Zatrzymaj DLNA", stop)):
+        item = Gtk.MenuItem(label=label)
+        item.connect("activate", cb)
+        menu.append(item)
+    menu.show_all()
+
+    icon = XApp.StatusIcon()
+    icon.set_name("minidlna")
+    icon.set_icon_name("network-server")
+    icon.set_tooltip_text("Mint-DLNA działa")
+    icon.set_primary_menu(menu)
+    icon.set_secondary_menu(menu)
+    icon.set_visible(True)
+
+    GLib.timeout_add_seconds(POLL_SECONDS, check, icon)
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Uzycie: minidlna [start|stop|status|toggle]  (domyslnie: toggle)
+set -uo pipefail
+
+COMPOSE=(docker compose -f "$HOME/docker/minidlna/compose.yaml")
+
+notify() {
+  echo "$1"
+  command -v notify-send >/dev/null && notify-send -i network-server "Mint-DLNA" "$1"
+}
+
+is_running() {
+  [[ -n "$("${COMPOSE[@]}" ps --status running -q 2>/dev/null)" ]]
+}
+
+start() {
+  if "${COMPOSE[@]}" up -d; then
+    notify "DLNA uruchomione – skanuję nowe pliki"
+    setsid -f "$HOME/.local/bin/minidlna-tray" >/dev/null 2>&1 </dev/null
+  else
+    notify "Błąd uruchamiania DLNA"; exit 1
+  fi
+}
+
+stop() {
+  if "${COMPOSE[@]}" stop; then
+    notify "DLNA zatrzymane"
+  else
+    notify "Błąd zatrzymywania DLNA"; exit 1
+  fi
+}
+
+case "${1:-toggle}" in
+  start)  start ;;
+  stop)   stop ;;
+  status) if is_running; then echo "DLNA działa"; else echo "DLNA zatrzymane"; exit 3; fi ;;
+  toggle) if is_running; then stop; else start; fi ;;
+  *) echo "Użycie: $(basename "$0") [start|stop|status|toggle]" >&2; exit 2 ;;
+esac
