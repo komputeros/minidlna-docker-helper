@@ -4,11 +4,11 @@ services:
     container_name: dlna
     network_mode: host
     restart: "no"
+    # katalogi z mediami dochodza z compose.override.yaml,
+    # generowanego przez skrypt `minidlna` z MEDIA_DIRS w .env
     volumes:
-      - ${MEDIA_PATH}:/media:ro
       - cache:/minidlna
     environment:
-      MINIDLNA_MEDIA_DIR: V,/media
       MINIDLNA_FRIENDLY_NAME: Mint-DLNA
       MINIDLNA_NOTIFY_INTERVAL: 30
       MINIDLNA_INOTIFY: "yes"

@@ -2,20 +2,88 @@
 # Uzycie: minidlna [start|stop|status|toggle]  (domyslnie: toggle)
 set -uo pipefail
 
-COMPOSE=(docker compose -f "$HOME/docker/minidlna/compose.yaml")
+DIR="$HOME/docker/minidlna"
+OVERRIDE="$DIR/compose.override.yaml"
 
 notify() {
   echo "$1"
   command -v notify-send >/dev/null && notify-send -i network-server "Mint-DLNA" "$1"
 }
 
+compose() {
+  local files=(-f "$DIR/compose.yaml")
+  [[ -f "$OVERRIDE" ]] && files+=(-f "$OVERRIDE")
+  docker compose "${files[@]}" "$@"
+}
+
 is_running() {
-  [[ -n "$("${COMPOSE[@]}" ps --status running -q 2>/dev/null)" ]]
+  [[ -n "$(compose ps --status running -q 2>/dev/null)" ]]
+}
+
+# Cytowanie wartosci dla YAML (i ucieczka '$' przed interpolacja compose)
+yq() {
+  local s="${1//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  printf '"%s"' "${s//\$/\$\$}"
+}
+
+# Generuje compose.override.yaml z MEDIA_DIRS w .env; blad -> GEN_ERR
+gen_override() {
+  local MEDIA_DIRS=""
+  # shellcheck disable=SC1091
+  source "$DIR/.env" || { GEN_ERR="Nie mozna wczytac $DIR/.env"; return 1; }
+
+  local entries entry type path name target i n=0 vols="" envs=""
+  local -A used=()
+  IFS=';' read -ra entries <<< "${MEDIA_DIRS//$'\n'/;}"
+  for entry in "${entries[@]}"; do
+    entry="${entry#"${entry%%[![:space:]]*}"}"
+    entry="${entry%"${entry##*[![:space:]]}"}"
+    [[ -z "$entry" ]] && continue
+    if [[ "$entry" =~ ^([AaVvPp]+):(/.*)$ ]]; then
+      type="${BASH_REMATCH[1]^^},"; path="${BASH_REMATCH[2]}"
+    elif [[ "$entry" == /* ]]; then
+      type=""; path="$entry"
+    else
+      GEN_ERR="Niepoprawny wpis w MEDIA_DIRS: $entry"; return 1
+    fi
+    [[ "$path" != / ]] && path="${path%/}"
+    [[ -d "$path" ]] || { GEN_ERR="Katalog nie istnieje: $path"; return 1; }
+
+    # punkt montowania w kontenerze: /media/<nazwa>, przy powtorce /media/<nazwa>_2 itd.
+    name="$(basename "$path")"; [[ "$name" == / ]] && name=root
+    target="/media/$name"; i=2
+    while [[ -n "${used[$target]:-}" ]]; do target="/media/${name}_$i"; ((i++)); done
+    used[$target]=1; ((n++))
+
+    vols+="      - type: bind
+        source: $(yq "$path")
+        target: $(yq "$target")
+        read_only: true
+"
+    envs+="      MINIDLNA_MEDIA_DIR_$n: $(yq "$type$target")
+"
+  done
+  (( n > 0 )) || { GEN_ERR="Brak katalogow w MEDIA_DIRS ($DIR/.env)"; return 1; }
+
+  {
+    echo "# Wygenerowane przez \`minidlna\` z MEDIA_DIRS w .env – nie edytuj recznie."
+    echo "services:"
+    echo "  dlna:"
+    echo "    volumes:"
+    printf '%s' "$vols"
+    echo "    environment:"
+    printf '%s' "$envs"
+  } > "$OVERRIDE.tmp" && mv "$OVERRIDE.tmp" "$OVERRIDE"
+  MEDIA_COUNT=$n
 }
 
 start() {
-  if "${COMPOSE[@]}" up -d; then
-    notify "DLNA uruchomione – skanuję nowe pliki"
+  if ! gen_override; then
+    notify "Błąd konfiguracji katalogów: $GEN_ERR"; exit 1
+  fi
+  if compose up -d; then
+    notify "DLNA uruchomione – skanuję katalogi ($MEDIA_COUNT)"
     setsid -f "$HOME/.local/bin/minidlna-tray" >/dev/null 2>&1 </dev/null
   else
     notify "Błąd uruchamiania DLNA"; exit 1
@@ -23,7 +91,7 @@ start() {
 }
 
 stop() {
-  if "${COMPOSE[@]}" stop; then
+  if compose stop; then
     notify "DLNA zatrzymane"
   else
     notify "Błąd zatrzymywania DLNA"; exit 1

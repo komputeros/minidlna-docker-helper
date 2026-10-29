@@ -20,12 +20,19 @@ python3 -c "import gi; gi.require_version('Gtk','3.0'); gi.require_version('XApp
 echo "=== Compose -> $COMPOSE_DIR"
 mkdir -p "$COMPOSE_DIR"
 install -m 644 "$SRC/compose/compose.yaml" "$COMPOSE_DIR/compose.yaml"
-if [[ -f "$COMPOSE_DIR/.env" ]]; then
-  echo "    .env juz istnieje – pozostawiony bez zmian"
+ENV_FILE="$COMPOSE_DIR/.env"
+if [[ -f "$ENV_FILE" ]]; then
+  if ! grep -q '^MEDIA_DIRS=' "$ENV_FILE" && grep -q '^MEDIA_PATH=' "$ENV_FILE"; then
+    # migracja z wersji z pojedynczym katalogiem
+    sed -i -E 's|^MEDIA_PATH=(.*)$|MEDIA_DIRS="V:\1"|' "$ENV_FILE"
+    echo "    .env: MEDIA_PATH zamieniono na MEDIA_DIRS"
+  else
+    echo "    .env juz istnieje – pozostawiony bez zmian"
+  fi
 else
   sed -e "s/^PUID=.*/PUID=$(id -u)/" -e "s/^PGID=.*/PGID=$(id -g)/" \
-    "$SRC/compose/.env.example" > "$COMPOSE_DIR/.env"
-  echo "    utworzono .env – sprawdz MEDIA_PATH"
+    "$SRC/compose/.env.example" > "$ENV_FILE"
+  echo "    utworzono .env – sprawdz MEDIA_DIRS"
 fi
 
 echo "=== Skrypty -> $BIN_DIR"
